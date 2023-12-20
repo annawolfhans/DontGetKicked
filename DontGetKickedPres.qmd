@@ -1,0 +1,108 @@
+---
+title: "Don't Get Kicked!"
+subtitle: "A Used Car Analysis"
+author: "Anna Wolford"
+format: 
+  revealjs:
+    incremental: false
+    theme: sky
+---
+```{r}
+# Load in libraries
+library(tidyverse)
+library(tidymodels)
+library(vroom)
+library(rpart)
+library(stacks)
+library(embed)
+library(ranger)
+library(discrim)
+library(naivebayes)
+library(kernlab)
+library(themis)
+```
+
+```{r}
+kickTrain <- vroom("./training.csv", na = c("", "NA", "NULL", "NOT AVAIL"))
+kickTest <- vroom("./test.csv", na = c("", "NA", "NULL", "NOT AVAIL"))
+```
+
+## Background
+-   The challenge auto dealerships have when purchasing used cars at auto auction
+-   "Kicks!" and their costs
+-   Predict which cars have a higher risk of being a kick
+-   Over 120,000 values
+
+ 
+## Feature Engineering Applied
+
+<small>-   Created factors (IsBadBuy, IsOnlineSale)</small>
+<small>-   Updated role "RefId" to 'ID' and excluded from bake</small>
+<small>-   Removed variables that were redundant, not very informative, had only a couple of values, or a massive amount of levels</small>
+  <small>-      (BYRNO, WheelTypeID, VehYear, VNST, VNZIP1, PurchDate, AUCGUART, PRIMEUNIT, Model, SubModel, Trim)</small>
+<small>-   Correlation filter on to remove any variables that are too highly correlated (threshold=0.7)</small>
+<small>-   Collapsed factor levels on all nominal predictors</small>
+
+<small>-   Created new variables (novel features) by combining existing variables</small>
+<small>-   Unknown factor level assignment for all of those who have a small category (step_other, threshold=0.001)</small>
+<small>-   Target Encoded all variables </small>
+<small>-   Median imputation applied to all the numeric NULL, NA, NOT AVAILABLE</small>
+
+
+
+```{r}
+my_recipe <- recipe(IsBadBuy ~., data = kickTrain) %>%
+  update_role(RefId, new_role = 'ID') %>% 
+  update_role_requirements('ID', bake = FALSE) %>%
+  step_mutate(IsBadBuy = factor(IsBadBuy), skip = TRUE) %>%
+  step_mutate(IsOnlineSale = factor(IsOnlineSale)) %>%
+  step_mutate_at(all_nominal_predictors(), fn = factor) %>%
+  step_rm(contains('MMR')) %>%
+  step_rm(BYRNO, WheelTypeID, VehYear, VNST, VNZIP1, PurchDate, # these variables don't seem very informative, or are repetitive
+          AUCGUART, PRIMEUNIT, # these variables have a lot of missing values
+          Model, SubModel, Trim) %>% # these variables have a lot of levels - could also try step_other()
+  step_corr(all_numeric_predictors(), threshold = .7) %>%
+  step_other(all_nominal_predictors(), threshold = .0001) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  # step_pca(all_predictors(), threshold = 0.8) %>%
+  step_smote(all_outcomes(), neighbors=5)
+
+```
+
+
+
+
+## Model Comparison
+-    Penalized Logistic Regression
+-    Random Forests and Boosting
+-    BART Model
+
+## Model Comparison
+-    Penalized Logistic Regression ..............................0.2291
+-    **Random Forests and Boosting** .........................**0.2351**
+-    BART Model ............................................................0.1747
+
+## Explanation of Model
+**Random Forests:** Random Forest is built on decision trees, which are where each node represents a test on an attribute, each branch is the outcome of the test, and each leaf represents a class label or numerical value.
+- Random Forest builds many trees, each on a different random subset of the data and features. These trees are trained independently on a random sample of the data with replacement (boostrapping)
+
+## Explanation of Model
+**Boosting**: combines weak learners sequentially so that each new tree corrects the errors of the previous one
+- Tuning is based on num boosted trees, depth of each tree, and the learning rate. 
+
+## Potential Improvement
+- Principle component analysis + step_zv 
+- Consider feature engineering Model, SubModel, and Trim a bit more carefully
+    - Create subgroups or levels 
+
+# Questions?
+
+
+## Appendix
+- Competition found at <https://www.kaggle.com/competitions/DontGetKicked>.
+- roc_auc was used rather than gain_capture for metric gathered.
+
+
